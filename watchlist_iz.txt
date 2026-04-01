@@ -1,0 +1,7 @@
+# Iz's Watchlist — One ticker per line
+# Lines starting with # are ignored
+#
+# Crypto pairs: BTC/USD, ETH/USD
+# US Stocks: AAPL, TSLA, NVDA
+# Canadian stocks: SHOP.TO, RY.TO
+
