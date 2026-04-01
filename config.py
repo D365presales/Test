@@ -42,9 +42,13 @@ TWO_POLE_LOOKBACK = 4  # Signal comparison offset
 VOLUME_MULTIPLIER = 1.5
 VOLUME_PERIOD = 20
 
-# Data cache directory
-DATA_DIR = "data"
+# Runs directory (each backtest gets a dated subfolder)
+RUNS_DIR = "runs"
 
-# Results directory
+# Master stats CSV (all runs aggregated)
+MASTER_STATS_FILE = "results/master_stats.csv"
+
+# Legacy compatibility (used by run_all.py to set per-run paths)
+DATA_DIR = "data"
 RESULTS_DIR = "results"
 RESULTS_FILE = "results/stats.csv"

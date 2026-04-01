@@ -1,5 +1,6 @@
 """
 Stats logger — calculates and saves backtest statistics to CSV.
+Supports writing to both run-specific folder AND master_stats.csv.
 """
 
 import os
@@ -10,6 +11,13 @@ import pandas as pd
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
+
+FIELDNAMES = [
+    "strategy_name", "pair", "roi", "drawdown", "sharpe",
+    "sortino", "win_rate", "num_trades", "expected_value"
+]
+
+MASTER_FIELDNAMES = ["run"] + FIELDNAMES
 
 
 def calculate_stats(stats, strategy_name: str, pair: str) -> dict:
@@ -73,24 +81,43 @@ def calculate_stats(stats, strategy_name: str, pair: str) -> dict:
     }
 
 
-def log_stats(results: list[dict]):
+def log_stats(results: list[dict], results_dir: str = None, results_file: str = None):
     """
-    Write all results to stats.csv.
+    Write all results to stats.csv in the specified directory.
+    Falls back to config defaults if not provided.
     """
-    os.makedirs(config.RESULTS_DIR, exist_ok=True)
-    filepath = config.RESULTS_FILE
+    results_dir = results_dir or config.RESULTS_DIR
+    results_file = results_file or os.path.join(results_dir, "stats.csv")
 
-    fieldnames = [
-        "strategy_name", "pair", "roi", "drawdown", "sharpe",
-        "sortino", "win_rate", "num_trades", "expected_value"
-    ]
+    os.makedirs(os.path.dirname(results_file), exist_ok=True)
 
-    with open(filepath, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+    with open(results_file, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
         writer.writeheader()
         writer.writerows(results)
 
-    print(f"\nStats saved to {filepath}")
+    print(f"\nStats saved to {results_file}")
+
+
+def append_to_master(results: list[dict], run_name: str, master_file: str = None):
+    """
+    Append results to the master_stats.csv with a run identifier column.
+    Creates the file with headers if it doesn't exist.
+    """
+    master_file = master_file or config.MASTER_STATS_FILE
+    os.makedirs(os.path.dirname(master_file), exist_ok=True)
+
+    file_exists = os.path.exists(master_file) and os.path.getsize(master_file) > 0
+
+    with open(master_file, "a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=MASTER_FIELDNAMES)
+        if not file_exists:
+            writer.writeheader()
+        for row in results:
+            master_row = {"run": run_name, **row}
+            writer.writerow(master_row)
+
+    print(f"Appended {len(results)} rows to {master_file}")
 
 
 def format_stats_comment(result: dict) -> str:

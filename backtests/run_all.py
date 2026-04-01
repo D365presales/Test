@@ -1,9 +1,12 @@
 """
 Backtest runner — runs all strategies against all pairs and generates stats.csv.
+Auto-creates a dated run folder and saves data + results there.
+Also appends to the master_stats.csv for cross-run comparison.
 """
 
 import os
 import sys
+from datetime import datetime
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -12,7 +15,7 @@ import config
 from backtesting import Backtest
 from backtesting.lib import FractionalBacktest
 from utils.data_fetcher import fetch_all, load_data, fetch_ohlcv, save_data
-from utils.stats_logger import calculate_stats, log_stats, format_stats_comment
+from utils.stats_logger import calculate_stats, log_stats, append_to_master, format_stats_comment
 from strategies.sma_crossover import SMACrossover
 from strategies.two_pole_oscillator import TwoPoleOscillator
 from strategies.volume_filter import VolumeFilter
@@ -27,15 +30,106 @@ STRATEGIES = {
 }
 
 
-def ensure_data():
-    """Fetch data if not cached."""
+def create_run_folder() -> tuple[str, str]:
+    """
+    Create a dated run folder under runs/.
+    Format: YYYY-MM-DD_symbols_timeframe
+    Returns (run_name, run_dir_path).
+    """
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    date_str = datetime.now().strftime("%Y-%m-%d")
+
+    # Build symbol descriptor from config
+    symbols = []
+    has_crypto = False
+    has_stocks = False
     for pair in config.PAIRS:
-        filename = pair.replace("/", "_") + f"_{config.TIMEFRAME}.csv"
-        filepath = os.path.join(config.DATA_DIR, filename)
+        if "/" in pair:
+            has_crypto = True
+        else:
+            has_stocks = True
+
+    if has_crypto and has_stocks:
+        asset_type = "mixed"
+    elif has_stocks:
+        asset_type = "stocks"
+    else:
+        asset_type = "crypto"
+
+    run_name = f"{date_str}_{asset_type}_{config.TIMEFRAME}"
+
+    # Handle duplicate run names (add suffix)
+    run_dir = os.path.join(project_root, config.RUNS_DIR, run_name)
+    if os.path.exists(run_dir):
+        counter = 2
+        while os.path.exists(f"{run_dir}_{counter}"):
+            counter += 1
+        run_name = f"{run_name}_{counter}"
+        run_dir = os.path.join(project_root, config.RUNS_DIR, run_name)
+
+    os.makedirs(os.path.join(run_dir, "data"), exist_ok=True)
+    os.makedirs(os.path.join(run_dir, "results"), exist_ok=True)
+
+    print(f"\nRun folder: {run_dir}")
+    return run_name, run_dir
+
+
+def generate_run_readme(run_dir: str, run_name: str, all_results: list[dict]):
+    """Generate a README.md summary for the run folder."""
+    readme_path = os.path.join(run_dir, "README.md")
+
+    lines = [
+        f"# Run: {run_name}",
+        "",
+        "## Configuration",
+        f"- **Pairs:** {', '.join(config.PAIRS)}",
+        f"- **Timeframe:** {config.TIMEFRAME}",
+        f"- **Initial Capital:** ${config.INITIAL_CAPITAL} {config.CURRENCY}",
+        f"- **Mode:** LONG ONLY / Spot / No leverage",
+        f"- **Run Date:** {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        "",
+        "## Results",
+        "",
+        "| Strategy | Pair | ROI% | Max DD% | Sharpe | Win Rate% | Trades | EV/Trade |",
+        "|----------|------|------|---------|--------|-----------|--------|----------|",
+    ]
+
+    for r in all_results:
+        lines.append(
+            f"| {r['strategy_name']} | {r['pair']} | {r['roi']} | {r['drawdown']} "
+            f"| {r['sharpe']} | {r['win_rate']} | {r['num_trades']} | ${r['expected_value']} |"
+        )
+
+    # Find best/worst
+    if all_results:
+        best = max(all_results, key=lambda x: x["roi"])
+        worst = min(all_results, key=lambda x: x["roi"])
+        lowest_dd = min(all_results, key=lambda x: x["drawdown"])
+
+        lines.extend([
+            "",
+            "## Highlights",
+            f"- **Best ROI:** {best['strategy_name']} on {best['pair']} ({best['roi']}%)",
+            f"- **Worst ROI:** {worst['strategy_name']} on {worst['pair']} ({worst['roi']}%)",
+            f"- **Lowest Drawdown:** {lowest_dd['strategy_name']} on {lowest_dd['pair']} ({lowest_dd['drawdown']}%)",
+        ])
+
+    with open(readme_path, "w") as f:
+        f.write("\n".join(lines) + "\n")
+
+    print(f"Run README saved to {readme_path}")
+
+
+def ensure_data(data_dir: str):
+    """Fetch data if not cached, saving to run-specific data dir."""
+    for pair in config.PAIRS:
+        clean_pair = pair.replace("/", "_").replace(":", "_")
+        filename = clean_pair + f"_{config.TIMEFRAME}.csv"
+        filepath = os.path.join(data_dir, filename)
         if not os.path.exists(filepath):
-            print(f"Data for {pair} not found, fetching...")
+            print(f"Fetching data for {pair}...")
             df = fetch_ohlcv(pair)
-            save_data(df, pair)
+            save_data(df, pair, data_dir)
         else:
             print(f"Using cached data for {pair}")
 
@@ -135,13 +229,19 @@ def main():
     print(f"Mode: LONG ONLY / Spot / No leverage")
     print("=" * 60)
 
-    # Ensure data is available
-    ensure_data()
+    # Create run folder
+    run_name, run_dir = create_run_folder()
+    data_dir = os.path.join(run_dir, "data")
+    results_dir = os.path.join(run_dir, "results")
+    results_file = os.path.join(results_dir, "stats.csv")
+
+    # Ensure data is available in the run folder
+    ensure_data(data_dir)
 
     all_results = []
 
     for pair in config.PAIRS:
-        data = load_data(pair)
+        data = load_data(pair, data_dir)
 
         for strategy_name, strategy_class in STRATEGIES.items():
             try:
@@ -159,8 +259,16 @@ def main():
                     "expected_value": 0,
                 })
 
-    # Save stats
-    log_stats(all_results)
+    # Save stats to run folder
+    log_stats(all_results, results_dir, results_file)
+
+    # Append to master stats
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    master_file = os.path.join(project_root, config.MASTER_STATS_FILE)
+    append_to_master(all_results, run_name, master_file)
+
+    # Generate run README
+    generate_run_readme(run_dir, run_name, all_results)
 
     # Update strategy files with stats comments
     update_strategy_file_comments(all_results)
@@ -172,6 +280,8 @@ def main():
     for r in all_results:
         print(f"{r['strategy_name']:<25} {r['pair']:<10} {r['roi']:>7.1f}% {r['drawdown']:>7.1f}% {r['sharpe']:>8.2f} {r['win_rate']:>7.1f}% {r['num_trades']:>8}")
     print("=" * 90)
+    print(f"\nResults saved to: {run_dir}")
+    print(f"Master stats: {master_file}")
 
 
 if __name__ == "__main__":

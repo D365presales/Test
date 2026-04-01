@@ -6,3 +6,6 @@ dist/
 build/
 .env
 venv/
+
+# Data files are large — only track structure, not CSVs
+runs/*/data/*.csv

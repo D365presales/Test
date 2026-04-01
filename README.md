@@ -1,17 +1,17 @@
-# Crypto Backtesting Framework
+# Crypto & Stock Backtesting Framework
 
-A Python backtesting framework for crypto trading strategies. Built for **LONG ONLY spot trading** with no leverage.
+A Python backtesting framework for crypto and stock trading strategies. Built for **LONG ONLY spot trading** with no leverage.
 
 ## Configuration
 
 | Setting | Value |
 |---------|-------|
-| Pairs | BTC/USD, ETH/USD, SOL/USD |
+| Pairs | BTC/USD, ETH/USD, SOL/USD (crypto) — stocks supported via yfinance |
 | Timeframe | 4H candles |
 | Backtest Period | 1 year |
 | Initial Capital | $1,000 CAD |
 | Entry Style | LONG ONLY (spot) |
-| Data Source | Kraken (via ccxt) |
+| Data Sources | Kraken/Binance (crypto via ccxt), yfinance (stocks) |
 
 ## Strategies
 
@@ -30,23 +30,29 @@ All three indicators as confluence. Entry requires SMA bullish regime + oscillat
 ## Project Structure
 
 ```
-├── README.md
-├── requirements.txt
-├── config.py              # pairs, timeframes, settings
-├── data/                  # cached OHLCV data
-├── pinescript/            # original PineScript source files
-├── strategies/            # Python strategy implementations
+├── README.md               # this file
+├── requirements.txt        # Python dependencies
+├── config.py               # pairs, timeframes, settings
+├── strategies/             # reusable strategy implementations
 │   ├── sma_crossover.py
 │   ├── two_pole_oscillator.py
 │   ├── volume_filter.py
 │   └── combined.py
-├── backtests/             # backtest runner scripts
-│   └── run_all.py
+├── pinescript/             # original PineScript source files
+│   └── two_pole_oscillator.pine
+├── backtests/              # backtest runner scripts
+│   └── run_all.py          # main entry point
+├── utils/
+│   ├── data_fetcher.py     # OHLCV data download (ccxt + yfinance)
+│   └── stats_logger.py     # CSV logging (run + master stats)
+├── runs/                   # each backtest gets a dated folder
+│   └── YYYY-MM-DD_type_tf/ # auto-created per run
+│       ├── data/           # OHLCV CSVs for this run
+│       ├── results/        # stats.csv for this run
+│       └── README.md       # auto-generated summary
 ├── results/
-│   └── stats.csv
-└── utils/
-    ├── data_fetcher.py    # OHLCV data download
-    └── stats_logger.py    # CSV logging
+│   └── master_stats.csv    # ALL runs aggregated — one big sortable file
+└── .gitignore
 ```
 
 ## Setup
@@ -57,23 +63,37 @@ pip install -r requirements.txt
 
 ## Usage
 
-### Fetch data and run all backtests:
+### Run all backtests (creates a new dated run folder automatically):
 ```bash
 cd backtests
 python run_all.py
 ```
+
+Each run:
+1. Creates a folder under `runs/` named `YYYY-MM-DD_crypto_4h` (or `stocks`, `mixed`)
+2. Fetches and saves OHLCV data to `runs/<run>/data/`
+3. Runs all strategies and saves results to `runs/<run>/results/stats.csv`
+4. Appends results to `results/master_stats.csv` for cross-run comparison
+5. Generates a `runs/<run>/README.md` summary with key metrics
 
 ### Fetch data only:
 ```bash
 python -m utils.data_fetcher
 ```
 
-## Results
+### Stock support:
+Add stock tickers to `config.py` PAIRS list. Supported formats:
+- `AAPL` — plain ticker (auto-detected as stock)
+- `NASDAQ:AAPL` — exchange-prefixed
+- `TSX:SHOP` — Canadian stocks (auto-converts to SHOP.TO for yfinance)
 
-Results are saved to `results/stats.csv` with columns:
-- strategy_name, pair, roi, drawdown, sharpe, sortino, win_rate, num_trades, expected_value
+## Master Stats
 
-Each strategy file also gets stats comments at the top after running.
+The `results/master_stats.csv` file aggregates all runs with columns:
+- `run` — the run folder name (date + asset type + timeframe)
+- `strategy_name`, `pair`, `roi`, `drawdown`, `sharpe`, `sortino`, `win_rate`, `num_trades`, `expected_value`
+
+Sort/filter to compare strategies across different time periods and market conditions.
 
 ## Adding New Strategies
 
