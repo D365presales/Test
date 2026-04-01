@@ -1,0 +1,16 @@
+# Watchlist — One ticker per line
+# Lines starting with # are ignored
+# 
+# Crypto pairs use slash format: BTC/USD, ETH/USD
+# Stocks use plain tickers: AAPL, TSLA, NVDA
+# Canadian stocks: SHOP.TO, RY.TO
+#
+# Example:
+# BTC/USD
+# ETH/USD
+# SOL/USD
+# AAPL
+# TSLA
+# NVDA
+# SHOP.TO
+
