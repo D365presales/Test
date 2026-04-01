@@ -1,0 +1,39 @@
+// Two-Pole Oscillator [BigBeluga]
+// Source: https://www.tradingview.com/script/2Ssn4yDZ-Two-Pole-Oscillator-BigBeluga/
+// License: Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
+// © BigBeluga
+
+//@version=6
+indicator("Two-Pole Oscillator [BigBeluga]", max_labels_count = 500, max_lines_count = 500)
+
+// INPUTS
+int length = input.int(20, minval=1, title="Filter Length")
+bool disp_lvl = input.bool(true, "Levels")
+color up_color = input.color(#55ffda, "", inline = "color")
+color dn_color = input.color(#8c5bff, "", inline = "color")
+
+// CALCULATIONS
+float sma1 = ta.sma(close, 25)
+float sma_n1 = ((close - sma1) - ta.sma(close - sma1, 25)) / ta.stdev(close - sma1, 25)
+
+// Two-pole smooth filter function
+f_two_pole_filter(source, length) =>
+    var float smooth1 = na
+    var float smooth2 = na
+    alpha = 2.0 / (length + 1)
+    if na(smooth1)
+        smooth1 := source
+    else
+        smooth1 := (1 - alpha) * smooth1 + alpha * source
+    if na(smooth2)
+        smooth2 := smooth1
+    else
+        smooth2 := (1 - alpha) * smooth2 + alpha * smooth1
+
+// Oscillator
+two_p = f_two_pole_filter(sma_n1, length)
+two_pp = two_p[4]
+
+// Signals
+bool buy = ta.crossover(two_p, two_pp) and two_p < 0 and barstate.isconfirmed
+bool sell = ta.crossunder(two_p, two_pp) and two_p > 0 and barstate.isconfirmed
