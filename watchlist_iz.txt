@@ -5,3 +5,74 @@
 # US Stocks: AAPL, TSLA, NVDA
 # Canadian stocks: SHOP.TO, RY.TO
 
+//@version=5
+strategy("VWAP+EMA+ADX NQ", overlay=true, initial_capital=100000, default_qty_type=strategy.percent_of_equity, default_qty_value=2)
+emaFast = input.int(9, "Fast EMA")
+emaSlow = input.int(21, "Slow EMA")
+adxLen = input.int(14, "ADX Length")
+adxMin = input.int(20, "Min ADX (trend strength)")
+atrLen = input.int(14, "ATR Length")
+tpMult = input.float(1.5, "TP (ATR mult)")
+slMult = input.float(1.0, "SL (ATR mult)")
+maxTrades = input.int(3, "Max Trades/Day")
+ema9 = ta.ema(close, emaFast)
+ema21 = ta.ema(close, emaSlow)
+vwap = ta.vwap(close)
+atr = ta.atr(atrLen)
+upMove = high - high[1]
+dnMove = low[1] - low
+plusDM = upMove > dnMove and upMove > 0 ? upMove : 0
+minusDM = dnMove > upMove and dnMove > 0 ? dnMove : 0
+trSmooth = ta.rma(ta.tr, adxLen)
+plusDI = 100 * ta.rma(plusDM, adxLen) / trSmooth
+minusDI = 100 * ta.rma(minusDM, adxLen) / trSmooth
+dx = 100 * math.abs(plusDI - minusDI) / (plusDI + minusDI)
+adx = ta.rma(dx, adxLen)
+var int trades = 0
+newDay = ta.change(time("D")) != 0
+if newDay
+    trades := 0
+vwapCrossUp = close > vwap and close[1] <= vwap[1]
+vwapCrossDn = close < vwap and close[1] >= vwap[1]
+trendUp = ema9 > ema21
+trendDn = ema9 < ema21
+strongTrend = adx > adxMin
+bullCandle = close > open
+bearCandle = close < open
+goLong = vwapCrossUp and trendUp and strongTrend and bullCandle and trades < maxTrades and strategy.position_size == 0
+goShort = vwapCrossDn and trendDn and strongTrend and bearCandle and trades < maxTrades and strategy.position_size == 0
+var float sl = na
+var float tp = na
+if goLong
+    sl := close - atr * slMult
+    tp := close + atr * tpMult
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Exit L", "Long", limit=tp, stop=sl)
+    trades += 1
+if goShort
+    sl := close + atr * slMult
+    tp := close - atr * tpMult
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Exit S", "Short", limit=tp, stop=sl)
+    trades += 1
+plot(vwap, "VWAP", color.orange, 2)
+plot(ema9, "EMA 9", color.aqua, 1)
+plot(ema21, "EMA 21", color.white, 1)
+plotshape(goLong, "BUY", shape.labelup, location.belowbar, color.green, text="BUY", textcolor=color.white, size=size.normal)
+plotshape(goShort, "SELL", shape.labeldown, location.abovebar, color.red, text="SELL", textcolor=color.white, size=size.normal)
+plot(strategy.position_size > 0 ? sl : na, "SL", color.red, 1, plot.style_linebr)
+plot(strategy.position_size > 0 ? tp : na, "TP", color.lime, 1, plot.style_linebr)
+plot(strategy.position_size < 0 ? sl : na, "SL", color.red, 1, plot.style_linebr)
+plot(strategy.position_size < 0 ? tp : na, "TP", color.lime, 1, plot.style_linebr)
+var table t = table.new(position.top_right, 2, 4, bgcolor=color.new(color.black, 80))
+if barstate.islast
+    table.cell(t, 0, 0, "ADX", text_color=color.white, text_size=size.small)
+    table.cell(t, 1, 0, str.tostring(adx, "#.#"), text_color=adx > adxMin ? color.green : color.red, text_size=size.small)
+    table.cell(t, 0, 1, "Trend", text_color=color.white, text_size=size.small)
+    table.cell(t, 1, 1, trendUp ? "BULL" : trendDn ? "BEAR" : "FLAT", text_color=trendUp ? color.green : trendDn ? color.red : color.gray, text_size=size.small)
+    table.cell(t, 0, 2, "VWAP", text_color=color.white, text_size=size.small)
+    table.cell(t, 1, 2, close > vwap ? "ABOVE" : "BELOW", text_color=close > vwap ? color.green : color.red, text_size=size.small)
+    table.cell(t, 0, 3, "Trades", text_color=color.white, text_size=size.small)
+    table.cell(t, 1, 3, str.tostring(trades) + "/" + str.tostring(maxTrades), text_color=color.yellow, text_size=size.small)
+alertcondition(goLong, "BUY Signal", "VWAP+EMA+ADX: BUY at {{close}}")
+alertcondition(goShort, "SELL Signal", "VWAP+EMA+ADX: SELL at {{close}}")
